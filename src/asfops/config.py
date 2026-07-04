@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from asfops.logs import LoggingConfig
 from asfops.models.resolve import ModelRef
 
 CopilotMode = Literal["model", "bridge"]
@@ -42,6 +43,9 @@ class FleetConfig:
     include_metadata: bool = True
     copilot_mode: CopilotMode = "model"
     """Reserved: ``"bridge"`` routes Copilot agents through the manual bridge."""
+
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    """Logging: a global structlog app log plus per-agent context logs."""
 
     on_empty_triage: Literal["fallback", "error"] = "fallback"
     """When triage selects nothing usable: engage a default core set, or raise."""

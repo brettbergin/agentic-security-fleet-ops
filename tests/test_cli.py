@@ -21,9 +21,7 @@ cli = sys.modules["asfops.cli.app"]
 runner = CliRunner()
 
 
-@pytest.fixture
-def offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Force every Fleet built by the CLI to run fully offline."""
+def _make_offline(monkeypatch: pytest.MonkeyPatch, *, force_logs: bool) -> None:
     orig_init = cli.Fleet.__init__
 
     def patched_init(self: Any, config: FleetConfig | None = None, **kw: Any) -> None:
@@ -38,9 +36,23 @@ def offline(monkeypatch: pytest.MonkeyPatch) -> None:
         cfg.synthesis_model = scripted_model(
             SynthesisSummary(executive_summary="exec", top_risks=[], recommended_next_steps=[])
         )
+        if force_logs:
+            cfg.logging.force = True
         orig_init(self, cfg, **kw)
 
     monkeypatch.setattr(cli.Fleet, "__init__", patched_init)
+
+
+@pytest.fixture
+def offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Force every Fleet built by the CLI to run fully offline (logging off)."""
+    _make_offline(monkeypatch, force_logs=False)
+
+
+@pytest.fixture
+def offline_forcelogs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Offline Fleet, but honor --log-dir under pytest by forcing logging on."""
+    _make_offline(monkeypatch, force_logs=True)
 
 
 def test_version() -> None:
@@ -164,3 +176,39 @@ def test_models_lists_available(monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(app, ["models"])
     assert result.exit_code == 0
     assert "copilot:claude-sonnet-4.5" in result.stdout
+
+
+def test_assess_writes_logs(offline_forcelogs: None, tmp_path: Any) -> None:
+    log_dir = tmp_path / "logs"
+    result = runner.invoke(
+        app,
+        ["assess", "review my api", "--log-dir", str(log_dir), "--log-level", "DEBUG", "--quiet"],
+    )
+    assert result.exit_code == 0
+    run_dirs = list(log_dir.iterdir())
+    assert len(run_dirs) == 1
+    agent_files = {p.stem for p in (run_dirs[0] / "agents").iterdir()}
+    assert {"triage", "appsec", "synthesis"} <= agent_files
+    assert (run_dirs[0] / "app.log").exists()
+
+
+def test_assess_no_logs_writes_nothing(offline_forcelogs: None, tmp_path: Any) -> None:
+    log_dir = tmp_path / "logs"
+    result = runner.invoke(
+        app,
+        ["assess", "review", "--log-dir", str(log_dir), "--no-logs", "--quiet"],
+    )
+    assert result.exit_code == 0
+    assert not log_dir.exists() or list(log_dir.iterdir()) == []
+
+
+def test_run_role_writes_logs(offline_forcelogs: None, tmp_path: Any) -> None:
+    log_dir = tmp_path / "logs"
+    result = runner.invoke(
+        app,
+        ["run", "threat-model", "model this", "--log-dir", str(log_dir), "--format", "json"],
+    )
+    assert result.exit_code == 0
+    run_dirs = list(log_dir.iterdir())
+    assert len(run_dirs) == 1
+    assert (run_dirs[0] / "agents" / "threat-model.json").exists()

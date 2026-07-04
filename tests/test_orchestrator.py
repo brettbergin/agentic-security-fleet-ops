@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Literal
 
 import pytest
@@ -143,3 +145,65 @@ async def test_events_emitted() -> None:
     assert "agent_started" in kinds
     assert "agent_finished" in kinds
     assert "synthesis_finished" in kinds
+
+
+def _assert_run_logs(log_dir: Path) -> None:
+    run_dirs = list(log_dir.iterdir())
+    assert len(run_dirs) == 1
+    run_dir = run_dirs[0]
+
+    # every agent (triage + 2 specialists + synthesis) has its own context file
+    agent_files = {p.stem for p in (run_dir / "agents").iterdir()}
+    assert agent_files == {"triage", "appsec", "threat-model", "synthesis"}
+
+    # global app.log is JSON lines carrying run_id + lifecycle events
+    lines = (run_dir / "app.log").read_text().strip().splitlines()
+    records = [json.loads(line) for line in lines]
+    assert all("run_id" in r for r in records)
+    events = {r["event"] for r in records}
+    assert {"run_started", "run_finished", "synthesis_finished"} <= events
+
+    # a specialist file holds the full message context
+    appsec = json.loads((run_dir / "agents" / "appsec.json").read_text())
+    assert appsec["status"] == "ok"
+    assert len(appsec["messages"]) >= 2
+
+
+async def test_run_writes_logs(tmp_path: Path) -> None:
+    from asfops.logs import LoggingConfig
+
+    orch = Orchestrator(
+        config(
+            triage=scripted_model(triage_decision("appsec", "threat-model")),
+            default=TestModel(),
+            synthesis=scripted_model(
+                SynthesisSummary(
+                    executive_summary="e", top_risks=["r"], recommended_next_steps=["s"]
+                )
+            ),
+            logging=LoggingConfig(base_dir=tmp_path, force=True, level="DEBUG"),
+        )
+    )
+    await orch.run("review the upload service")
+    _assert_run_logs(tmp_path)
+
+
+async def test_run_no_logs_writes_nothing(tmp_path: Path) -> None:
+    from asfops.logs import LoggingConfig
+
+    orch = Orchestrator(
+        config(
+            triage=scripted_model(triage_decision("appsec")),
+            default=TestModel(),
+            synthesis=scripted_model(
+                SynthesisSummary(executive_summary="e", top_risks=[], recommended_next_steps=[])
+            ),
+            logging=LoggingConfig(base_dir=tmp_path, enabled=False),
+        )
+    )
+    await orch.run("x")
+    _assert_empty(tmp_path)
+
+
+def _assert_empty(log_dir: Path) -> None:
+    assert not any(log_dir.iterdir())

@@ -75,6 +75,39 @@ Every `FleetResult` optionally includes (`include_metadata=True`, default):
 - per-agent: role, resolved model id, input/output/cache token counts, duration
 - totals per model, plus a grand total across the whole assessment
 
+## Logging
+
+Two separate logs are written per run, under one timestamped directory:
+
+```
+asfops-logs/<UTC-timestamp>-<run_id>/
+├── app.log                 # global application log (structlog JSON lines)
+└── agents/
+    ├── triage.json         # each agent's ENTIRE context…
+    ├── appsec.json         # …full message history + model + usage + output
+    ├── …
+    └── synthesis.json
+```
+
+- **`app.log`** — application-wide lifecycle events (config, triage decision, per-agent start/finish/fail with token counts, synthesis, Copilot client start/stop, run totals), correlated by a fleet-level `run_id`.
+- **`agents/<slug>.json`** — the complete context of one agent invocation (every specialist plus triage and synthesis): the full pydantic-ai message history (system prompt, user prompt, model response, retries) with a metadata header (model, token usage, duration, run_id, structured output).
+
+Logging is **on by default** and configurable:
+
+```bash
+asfops assess "…" --log-dir ./logs --log-level DEBUG   # custom location/verbosity
+asfops assess "…" --no-logs                            # disable entirely
+```
+
+```python
+from pathlib import Path
+from asfops import Fleet, FleetConfig, LoggingConfig
+
+fleet = Fleet(FleetConfig(logging=LoggingConfig(base_dir=Path("./logs"), level="DEBUG")))
+```
+
+Logging auto-disables under pytest so test runs stay clean. `asfops.get_logger(__name__)` exposes the same structlog logger for your own code.
+
 ## Development
 
 ```bash

@@ -12,9 +12,12 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from asfops.exceptions import CopilotRuntimeError
+from asfops.logs import get_logger
 
 if TYPE_CHECKING:
     from copilot import CopilotClient
+
+log = get_logger("copilot.client")
 
 _lock = asyncio.Lock()
 _client: CopilotClient | None = None
@@ -27,16 +30,19 @@ async def get_shared_client() -> CopilotClient:
         if _client is None:
             from copilot import CopilotClient
 
+            log.info("copilot_client_starting")
             client = CopilotClient(log_level="error")
             try:
                 await client.start()
             except Exception as exc:
+                log.error("copilot_client_start_failed", error=str(exc), exc_info=exc)
                 raise CopilotRuntimeError(
                     "Failed to start the GitHub Copilot runtime. Check that you are "
                     "authenticated (gh auth login, or COPILOT_GITHUB_TOKEN/GH_TOKEN/"
                     "GITHUB_TOKEN) and have a Copilot subscription."
                 ) from exc
             _client = client
+            log.info("copilot_client_started")
     return _client
 
 
@@ -52,6 +58,7 @@ async def shutdown() -> None:
         if _client is not None:
             try:
                 await _client.stop()
+                log.info("copilot_client_stopped")
             except Exception:
                 pass
             finally:

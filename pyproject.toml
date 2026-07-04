@@ -28,6 +28,7 @@ dependencies = [
     "github-copilot-sdk>=1.0.2,<2",
     "typer>=0.15",
     "rich>=13.9",
+    "structlog>=24.1",
 ]
 
 [project.urls]

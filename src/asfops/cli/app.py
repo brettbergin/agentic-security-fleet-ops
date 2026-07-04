@@ -17,6 +17,7 @@ from asfops.api import Fleet
 from asfops.cli.render import ProgressReporter, metadata_table, roster_table
 from asfops.config import FleetConfig
 from asfops.exceptions import AsfopsError, RoleNotFoundError
+from asfops.logs import LoggingConfig, configure_logging
 from asfops.results import AgentResult, FleetResult, build_agent_report_md
 
 app = typer.Typer(
@@ -81,6 +82,9 @@ def _build_config(
     concurrency: int | None,
     timeout: float | None,
     no_metadata: bool,
+    log_dir: Path | None = None,
+    log_level: str = "INFO",
+    no_logs: bool = False,
 ) -> FleetConfig:
     cfg = FleetConfig()
     if model:
@@ -96,6 +100,11 @@ def _build_config(
     if timeout:
         cfg.per_agent_timeout_s = timeout
     cfg.include_metadata = not no_metadata
+    cfg.logging = LoggingConfig(
+        enabled=not no_logs,
+        base_dir=log_dir if log_dir is not None else cfg.logging.base_dir,
+        level=log_level.upper(),
+    )
     return cfg
 
 
@@ -134,11 +143,30 @@ def assess(
     no_metadata: Annotated[
         bool, typer.Option("--no-metadata", help="Omit usage metadata.")
     ] = False,
+    log_dir: Annotated[
+        Path | None, typer.Option("--log-dir", help="Base directory for log output.")
+    ] = None,
+    log_level: Annotated[
+        str, typer.Option("--log-level", help="Log level (DEBUG/INFO/WARNING/ERROR).")
+    ] = "INFO",
+    no_logs: Annotated[bool, typer.Option("--no-logs", help="Disable all logging.")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Suppress progress output.")] = False,
 ) -> None:
     """Run a full fleet assessment and print the composed report."""
     text = _read_request(request, file)
-    cfg = _build_config(model, triage_model, role, exclude, concurrency, timeout, no_metadata)
+    cfg = _build_config(
+        model,
+        triage_model,
+        role,
+        exclude,
+        concurrency,
+        timeout,
+        no_metadata,
+        log_dir,
+        log_level,
+        no_logs,
+    )
+    configure_logging(cfg.logging)
     fleet = Fleet(cfg)
 
     show_progress = not quiet and output_format is OutputFormat.md and output is None
@@ -149,6 +177,9 @@ def assess(
     except AsfopsError as exc:
         _fail(str(exc))
         return
+
+    if not no_logs and not quiet:
+        _stderr.print(f"[dim]Logs written under {cfg.logging.base_dir}/[/dim]")
 
     if output_format is OutputFormat.json:
         payload = result.model_dump_json(indent=2)
@@ -176,12 +207,23 @@ def run(
     output_format: Annotated[
         OutputFormat, typer.Option("--format", help="Output format.")
     ] = OutputFormat.md,
+    log_dir: Annotated[
+        Path | None, typer.Option("--log-dir", help="Base directory for log output.")
+    ] = None,
+    log_level: Annotated[str, typer.Option("--log-level", help="Log level.")] = "INFO",
+    no_logs: Annotated[bool, typer.Option("--no-logs", help="Disable all logging.")] = False,
 ) -> None:
     """Engage a single specialist directly (no triage, no synthesis)."""
     text = _read_request(request, file)
     cfg = FleetConfig()
     if model:
         cfg.default_model = model
+    cfg.logging = LoggingConfig(
+        enabled=not no_logs,
+        base_dir=log_dir if log_dir is not None else cfg.logging.base_dir,
+        level=log_level.upper(),
+    )
+    configure_logging(cfg.logging)
     fleet = Fleet(cfg)
     try:
         result = asyncio.run(_run_role_and_close(fleet, slug, text))
