@@ -40,8 +40,12 @@ from asfops import Fleet, FleetConfig
 fleet = Fleet(FleetConfig(
     default_model="copilot:claude-sonnet-4.5",   # any pydantic-ai model ref works too
     model_overrides={"threat-model": "anthropic:claude-sonnet-4-5"},
+    fallback_models=("anthropic:claude-sonnet-4-5",),  # retry here if the primary errors
     force_roles=("grc",),
     max_concurrency=5,
+    temperature=0.1,             # steadier, more deterministic analysis
+    max_tokens=4000,             # cap output length per agent
+    per_agent_token_limit=200_000,  # hard budget guard; over-budget agents fail gracefully
 ))
 result = await fleet.assess("...")
 ```
