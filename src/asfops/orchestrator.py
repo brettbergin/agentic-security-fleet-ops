@@ -20,6 +20,7 @@ from asfops.fleet.schemas import (
     SynthesisSummary,
     TriageDecision,
 )
+from asfops.logs import RunLogger, get_logger
 from asfops.models.resolve import resolve_model
 from asfops.results import (
     AgentResult,
@@ -33,6 +34,13 @@ from asfops.results import (
 )
 
 EventCallback = Callable[[FleetEvent], None]
+
+log = get_logger("orchestrator")
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).isoformat()
+
 
 _TRIAGE_SYSTEM = """
 You are the Security Orchestrator for a security department. Given an assessment
@@ -81,7 +89,11 @@ class Orchestrator:
         return decision
 
     async def _triage(
-        self, request: str, *, on_event: EventCallback | None = None
+        self,
+        request: str,
+        *,
+        on_event: EventCallback | None = None,
+        run_logger: RunLogger | None = None,
     ) -> tuple[TriageDecision, AgentUsage]:
         if on_event:
             on_event(FleetEvent(kind="triage_started"))
@@ -93,10 +105,28 @@ class Orchestrator:
             system_prompt=f"{_TRIAGE_SYSTEM}\n\n{_roster_block(self.registry)}",
             name="triage",
         )
+        if run_logger is not None:
+            run_logger.log.info("triage_started", model_id=model_id)
+        started_at = _now_iso()
         start = time.monotonic()
         result = await agent.run(request)
-        usage = usage_from_run("triage", model_id, result.usage, time.monotonic() - start)
+        duration = time.monotonic() - start
+        usage = usage_from_run("triage", model_id, result.usage, duration)
         decision = self._reconcile_selection(result.output)
+        if run_logger is not None:
+            run_logger.agent_log(
+                slug="triage",
+                role_name="Triage",
+                model_id=model_id,
+                run=result,
+                duration_s=duration,
+                started_at=started_at,
+            )
+            run_logger.log.info(
+                "triage_finished",
+                selected=[s.slug for s in decision.selected],
+                duration_s=round(duration, 3),
+            )
         if on_event:
             on_event(
                 FleetEvent(
@@ -140,7 +170,12 @@ class Orchestrator:
         return TriageDecision(selected=selected, overall_rationale=decision.overall_rationale)
 
     async def _run_role(
-        self, sel: RoleSelection, request: str, *, on_event: EventCallback | None
+        self,
+        sel: RoleSelection,
+        request: str,
+        *,
+        on_event: EventCallback | None,
+        run_logger: RunLogger | None = None,
     ) -> AgentResult:
         role = self.registry.get(sel.slug)
         model_ref = self.config.model_overrides.get(sel.slug) or role.default_model
@@ -148,6 +183,9 @@ class Orchestrator:
         model_id = f"{model.system}:{model.model_name}"
         if on_event:
             on_event(FleetEvent(kind="agent_started", slug=sel.slug))
+        if run_logger is not None:
+            run_logger.log.info("agent_started", slug=sel.slug, model_id=model_id)
+        started_at = _now_iso()
         start = time.monotonic()
         try:
             agent = build_agent(role, model)
@@ -156,6 +194,24 @@ class Orchestrator:
             duration = time.monotonic() - start
             report: AgentReport = run.output
             usage = usage_from_run(sel.slug, model_id, run.usage, duration)
+            if run_logger is not None:
+                run_logger.agent_log(
+                    slug=sel.slug,
+                    role_name=role.name,
+                    model_id=model_id,
+                    run=run,
+                    duration_s=duration,
+                    started_at=started_at,
+                )
+                run_logger.log.info(
+                    "agent_finished",
+                    slug=sel.slug,
+                    model_id=model_id,
+                    duration_s=round(duration, 3),
+                    findings=len(report.findings),
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                )
             if on_event:
                 on_event(FleetEvent(kind="agent_finished", slug=sel.slug))
             return AgentResult(
@@ -168,6 +224,22 @@ class Orchestrator:
             )
         except Exception as exc:
             duration = time.monotonic() - start
+            if run_logger is not None:
+                run_logger.agent_log(
+                    slug=sel.slug,
+                    role_name=role.name,
+                    model_id=model_id,
+                    duration_s=duration,
+                    started_at=started_at,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                run_logger.log.warning(
+                    "agent_failed",
+                    slug=sel.slug,
+                    model_id=model_id,
+                    error=str(exc),
+                    exc_info=exc,
+                )
             if on_event:
                 on_event(FleetEvent(kind="agent_failed", slug=sel.slug, detail=str(exc)))
             return AgentResult(
@@ -180,13 +252,18 @@ class Orchestrator:
             )
 
     async def fan_out(
-        self, decision: TriageDecision, request: str, *, on_event: EventCallback | None = None
+        self,
+        decision: TriageDecision,
+        request: str,
+        *,
+        on_event: EventCallback | None = None,
+        run_logger: RunLogger | None = None,
     ) -> list[AgentResult]:
         sem = asyncio.Semaphore(self.config.max_concurrency)
 
         async def guarded(sel: RoleSelection) -> AgentResult:
             async with sem:
-                return await self._run_role(sel, request, on_event=on_event)
+                return await self._run_role(sel, request, on_event=on_event, run_logger=run_logger)
 
         return await asyncio.gather(*(guarded(sel) for sel in decision.selected))
 
@@ -196,6 +273,7 @@ class Orchestrator:
         agent_results: list[AgentResult],
         *,
         on_event: EventCallback | None = None,
+        run_logger: RunLogger | None = None,
     ) -> tuple[SynthesisSummary | None, AgentUsage | None]:
         ok_results = [r for r in agent_results if r.report is not None]
         if not ok_results:
@@ -210,16 +288,31 @@ class Orchestrator:
             system_prompt=_SYNTHESIS_SYSTEM,
             name="synthesis",
         )
+        if run_logger is not None:
+            run_logger.log.info("synthesis_started", model_id=model_id)
         prompt = self._synthesis_prompt(request, ok_results)
+        started_at = _now_iso()
         start = time.monotonic()
         try:
             run = await agent.run(prompt)
-        except Exception:
+        except Exception as exc:
+            if run_logger is not None:
+                run_logger.log.warning("synthesis_failed", error=str(exc), exc_info=exc)
             if on_event:
                 on_event(FleetEvent(kind="synthesis_finished", detail="failed"))
             return None, None
         duration = time.monotonic() - start
         usage = usage_from_run("synthesis", model_id, run.usage, duration)
+        if run_logger is not None:
+            run_logger.agent_log(
+                slug="synthesis",
+                role_name="Synthesis",
+                model_id=model_id,
+                run=run,
+                duration_s=duration,
+                started_at=started_at,
+            )
+            run_logger.log.info("synthesis_finished", duration_s=round(duration, 3))
         if on_event:
             on_event(FleetEvent(kind="synthesis_finished"))
         return run.output, usage
@@ -236,33 +329,60 @@ class Orchestrator:
             parts.append(f"\n## {r.role_name}\nSummary: {r.report.summary}\nFindings: {findings}")
         return "\n".join(parts)
 
-    async def run(self, request: str, *, on_event: EventCallback | None = None) -> FleetResult:
-        started_at = datetime.now(UTC)
-        decision, triage_usage = await self._triage(request, on_event=on_event)
-        agent_results = await self.fan_out(decision, request, on_event=on_event)
-        synthesis, synth_usage = await self.synthesize(request, agent_results, on_event=on_event)
-        finished_at = datetime.now(UTC)
-
-        metadata: FleetMetadata | None = None
-        if self.config.include_metadata:
-            per_agent = [triage_usage, *(r.usage for r in agent_results)]
-            if synth_usage is not None:
-                per_agent = [*per_agent, synth_usage]
-            totals, grand = aggregate_usage(per_agent)
-            metadata = FleetMetadata(
-                per_agent=per_agent,
-                totals_by_model=totals,
-                grand_total=grand,
-                started_at=started_at,
-                finished_at=finished_at,
+    async def run(
+        self,
+        request: str,
+        *,
+        on_event: EventCallback | None = None,
+        run_logger: RunLogger | None = None,
+    ) -> FleetResult:
+        owns_logger = run_logger is None
+        if run_logger is None:
+            run_logger = RunLogger(self.config.logging)
+        try:
+            run_logger.log.info("run_started", request_chars=len(request))
+            started_at = datetime.now(UTC)
+            decision, triage_usage = await self._triage(
+                request, on_event=on_event, run_logger=run_logger
             )
+            agent_results = await self.fan_out(
+                decision, request, on_event=on_event, run_logger=run_logger
+            )
+            synthesis, synth_usage = await self.synthesize(
+                request, agent_results, on_event=on_event, run_logger=run_logger
+            )
+            finished_at = datetime.now(UTC)
 
-        report_md = build_report_md(request, decision, agent_results, synthesis, metadata)
-        return FleetResult(
-            request=request,
-            triage=decision,
-            agent_results=agent_results,
-            synthesis=synthesis,
-            report_md=report_md,
-            metadata=metadata,
-        )
+            metadata: FleetMetadata | None = None
+            if self.config.include_metadata:
+                per_agent = [triage_usage, *(r.usage for r in agent_results)]
+                if synth_usage is not None:
+                    per_agent = [*per_agent, synth_usage]
+                totals, grand = aggregate_usage(per_agent)
+                metadata = FleetMetadata(
+                    per_agent=per_agent,
+                    totals_by_model=totals,
+                    grand_total=grand,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                )
+
+            report_md = build_report_md(request, decision, agent_results, synthesis, metadata)
+            failures = [r.role_slug for r in agent_results if r.report is None]
+            run_logger.log.info(
+                "run_finished",
+                agents=len(agent_results),
+                failed=failures,
+                duration_s=round((finished_at - started_at).total_seconds(), 3),
+            )
+            return FleetResult(
+                request=request,
+                triage=decision,
+                agent_results=agent_results,
+                synthesis=synthesis,
+                report_md=report_md,
+                metadata=metadata,
+            )
+        finally:
+            if owns_logger:
+                run_logger.close()

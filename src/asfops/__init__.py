@@ -37,6 +37,7 @@ from asfops.fleet.schemas import (
     SynthesisSummary,
     TriageDecision,
 )
+from asfops.logs import LoggingConfig, configure_logging, get_logger
 from asfops.models import CopilotBridge, CopilotModel, ModelRef, resolve_model, shutdown
 from asfops.results import (
     AgentResult,
@@ -62,6 +63,7 @@ __all__ = [
     "FleetEvent",
     "FleetMetadata",
     "FleetResult",
+    "LoggingConfig",
     "ModelRef",
     "ModelUsageTotals",
     "RoleNotFoundError",
@@ -77,6 +79,8 @@ __all__ = [
     "assess",
     "assess_sync",
     "compose_report",
+    "configure_logging",
+    "get_logger",
     "list_roles",
     "resolve_model",
     "shutdown",

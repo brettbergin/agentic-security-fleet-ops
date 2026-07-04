@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from asfops.config import FleetConfig
 from asfops.fleet.roles import REGISTRY, RoleRegistry, RoleSpec
 from asfops.fleet.schemas import RoleSelection, TriageDecision
+from asfops.logs import RunLogger
 from asfops.models.client import shutdown
 from asfops.orchestrator import EventCallback, Orchestrator
 from asfops.results import (
@@ -52,7 +53,14 @@ class Fleet:
         """Engage a single specialist by slug (no triage, no synthesis)."""
         self.registry.get(slug)  # validates slug, raises RoleNotFoundError
         sel = RoleSelection(slug=slug, rationale="Directly requested.", priority="primary")
-        return await self._orchestrator._run_role(sel, request, on_event=None)
+        run_logger = RunLogger(self.config.logging)
+        try:
+            run_logger.log.info("run_role_started", slug=slug, request_chars=len(request))
+            return await self._orchestrator._run_role(
+                sel, request, on_event=None, run_logger=run_logger
+            )
+        finally:
+            run_logger.close()
 
     def run_role_sync(self, slug: str, request: str) -> AgentResult:
         _guard_no_running_loop()

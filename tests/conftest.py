@@ -3,15 +3,40 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+import logging as _logging
+from collections.abc import Callable, Iterator
 from typing import Any
 
+import pytest
+import structlog
 from pydantic import BaseModel
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.settings import ModelSettings
+
+import asfops.logs as _logs
+
+
+@pytest.fixture(autouse=True)
+def _clean_logging() -> Iterator[None]:
+    """Keep logging state isolated between tests.
+
+    Under pytest, ``LoggingConfig`` is disabled by default (see
+    ``asfops.logs._effective_enabled``), so most tests never touch logging.
+    Tests that opt in (``force=True``) attach a file handler to the ``asfops``
+    logger; this fixture tears any such handler down and resets structlog so
+    no state — or open tmp-dir file handles — leaks across tests.
+    """
+    yield
+    logger = _logging.getLogger("asfops")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+    structlog.contextvars.clear_contextvars()
+    structlog.reset_defaults()
+    _logs._configured = False
 
 
 def scripted_model(output: BaseModel, *, model_name: str = "scripted") -> FunctionModel:
