@@ -119,6 +119,32 @@ def test_assess_no_metadata(offline: None) -> None:
     assert result.exit_code == 0
 
 
+def test_progress_shows_on_stderr_with_output_file(offline: None, tmp_path: Any) -> None:
+    # -o sends the report to a file; progress must still appear on stderr,
+    # and must not leak into the (empty) stdout.
+    out = tmp_path / "report.md"
+    result = runner.invoke(app, ["assess", "review my api", "-o", str(out)])
+    assert result.exit_code == 0
+    assert "appsec" in result.stderr  # per-agent progress emitted
+    assert "Security Fleet Assessment" not in result.stdout  # report went to the file
+    assert out.read_text().startswith("# Security Fleet Assessment")
+
+
+def test_progress_suppressed_with_quiet(offline: None, tmp_path: Any) -> None:
+    out = tmp_path / "report.md"
+    result = runner.invoke(app, ["assess", "review", "-o", str(out), "--quiet"])
+    assert result.exit_code == 0
+    assert "appsec" not in result.stderr
+
+
+def test_json_stdout_is_clean_with_progress(offline: None) -> None:
+    # Progress on stderr must never corrupt JSON on stdout.
+    result = runner.invoke(app, ["assess", "review my api", "--format", "json"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)  # would raise if progress leaked into stdout
+    assert data["request"] == "review my api"
+
+
 def test_assess_forced_and_excluded_roles(offline: None) -> None:
     result = runner.invoke(
         app,

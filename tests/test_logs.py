@@ -8,7 +8,14 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
 
-from asfops.logs import LoggingConfig, RunLogger, _effective_enabled
+from asfops.logs import (
+    LoggingConfig,
+    RunLogger,
+    _effective_enabled,
+    app_home,
+    default_log_dir,
+    ensure_app_home,
+)
 
 
 class _Out(BaseModel):
@@ -24,6 +31,36 @@ async def _run_agent() -> object:
         model=TestModel(), output_type=_Out, system_prompt="you are a tester"
     )
     return await agent.run("assess this")
+
+
+def test_app_home_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ASFOPS_HOME", raising=False)
+    assert app_home() == Path.home() / ".asfops"
+    assert default_log_dir() == Path.home() / ".asfops" / "logs"
+
+
+def test_app_home_env_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ASFOPS_HOME", str(tmp_path / "custom"))
+    assert app_home() == tmp_path / "custom"
+    assert default_log_dir() == tmp_path / "custom" / "logs"
+
+
+def test_default_logging_config_base_dir_is_under_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A LoggingConfig with no explicit base_dir lands under ~/.asfops/logs,
+    # never in the current working directory / repo root.
+    monkeypatch.setenv("ASFOPS_HOME", str(tmp_path))
+    assert LoggingConfig().base_dir == tmp_path / "logs"
+
+
+def test_ensure_app_home_creates_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    home = tmp_path / "home" / ".asfops"
+    monkeypatch.setenv("ASFOPS_HOME", str(home))
+    assert not home.exists()
+    result = ensure_app_home()
+    assert result == home
+    assert home.is_dir()
 
 
 def test_effective_enabled_disabled_under_pytest() -> None:

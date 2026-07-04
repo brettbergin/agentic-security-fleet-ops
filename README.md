@@ -77,10 +77,12 @@ Every `FleetResult` optionally includes (`include_metadata=True`, default):
 
 ## Logging
 
-Two separate logs are written per run, under one timestamped directory:
+Two separate logs are written per run, under one timestamped directory in
+`~/.asfops/logs/` (created on first use; override the base with `--log-dir` or
+the `ASFOPS_HOME` env var):
 
 ```
-asfops-logs/<UTC-timestamp>-<run_id>/
+~/.asfops/logs/<UTC-timestamp>-<run_id>/
 ├── app.log                 # global application log (structlog JSON lines)
 └── agents/
     ├── triage.json         # each agent's ENTIRE context…
@@ -117,7 +119,7 @@ uv run ruff format --check . && uv run ruff check .
 uv run mypy src tests
 ```
 
-Releases: bump `src/asfops/_version.py`, tag `vX.Y.Z`, push the tag — GitHub Actions publishes to PyPI via [trusted publishing](https://docs.pypi.org/trusted-publishers/).
+Releases are **fully automated**: every merge to `main` auto-bumps the patch version, tags it, builds, and publishes to PyPI via [trusted publishing](https://docs.pypi.org/trusted-publishers/). The version comes from the git tag ([`hatch-vcs`](https://github.com/ofek/hatch-vcs)) — never hand-edited. See [RELEASING.md](RELEASING.md).
 
 ## License
 

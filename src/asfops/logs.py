@@ -36,16 +36,38 @@ _LOGGER_NAMESPACE = "asfops"
 _configured = False
 
 
+def app_home() -> Path:
+    """The asfops application home directory.
+
+    Defaults to ``~/.asfops``; override with the ``ASFOPS_HOME`` env var.
+    """
+    override = os.environ.get("ASFOPS_HOME")
+    return Path(override).expanduser() if override else Path.home() / ".asfops"
+
+
+def default_log_dir() -> Path:
+    """Default base directory for logs: ``<app_home>/logs``."""
+    return app_home() / "logs"
+
+
+def ensure_app_home() -> Path:
+    """Create the asfops home directory if it does not exist and return it."""
+    home = app_home()
+    home.mkdir(parents=True, exist_ok=True)
+    return home
+
+
 @dataclass
 class LoggingConfig:
     """Controls asfops logging for a fleet run.
 
     Logging is on by default but is automatically disabled while running under
-    pytest (see :func:`_under_pytest`) unless ``force`` is set.
+    pytest (see :func:`_under_pytest`) unless ``force`` is set. Logs default to
+    ``~/.asfops/logs`` (override the base directory here or via ``ASFOPS_HOME``).
     """
 
     enabled: bool = True
-    base_dir: Path = field(default_factory=lambda: Path("asfops-logs"))
+    base_dir: Path = field(default_factory=default_log_dir)
     level: str = "INFO"
     agent_logs: bool = True
     console: bool = False
@@ -224,7 +246,10 @@ def _usage_dict(usage: object) -> dict[str, Any]:
 __all__ = [
     "LoggingConfig",
     "RunLogger",
+    "app_home",
     "configure_logging",
+    "default_log_dir",
+    "ensure_app_home",
     "ensure_configured",
     "get_logger",
 ]
