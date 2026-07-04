@@ -80,7 +80,18 @@ class Orchestrator:
         self.registry = registry or REGISTRY
 
     def _model(self, ref: object) -> Model:
-        return resolve_model(ref)  # type: ignore[arg-type]
+        primary = resolve_model(ref)  # type: ignore[arg-type]
+        if not self.config.fallback_models:
+            return primary
+        from pydantic_ai.exceptions import ModelAPIError
+        from pydantic_ai.models.fallback import FallbackModel
+
+        from asfops.exceptions import CopilotRuntimeError
+
+        fallbacks = [resolve_model(f) for f in self.config.fallback_models]
+        # Fall back on transient model/API errors and Copilot runtime failures,
+        # but not on programming errors (which should surface loudly).
+        return FallbackModel(primary, *fallbacks, fallback_on=(ModelAPIError, CopilotRuntimeError))
 
     async def triage(
         self, request: str, *, on_event: EventCallback | None = None
@@ -109,7 +120,11 @@ class Orchestrator:
             run_logger.log.info("triage_started", model_id=model_id)
         started_at = _now_iso()
         start = time.monotonic()
-        result = await agent.run(request)
+        result = await agent.run(
+            request,
+            model_settings=self.config.model_settings(),
+            usage_limits=self.config.usage_limits(),
+        )
         duration = time.monotonic() - start
         usage = usage_from_run("triage", model_id, result.usage, duration)
         decision = self._reconcile_selection(result.output)
@@ -190,7 +205,11 @@ class Orchestrator:
         try:
             agent = build_agent(role, model)
             async with asyncio.timeout(self.config.per_agent_timeout_s):
-                run = await agent.run(request)
+                run = await agent.run(
+                    request,
+                    model_settings=self.config.model_settings(),
+                    usage_limits=self.config.usage_limits(),
+                )
             duration = time.monotonic() - start
             report: AgentReport = run.output
             usage = usage_from_run(sel.slug, model_id, run.usage, duration)
@@ -294,7 +313,11 @@ class Orchestrator:
         started_at = _now_iso()
         start = time.monotonic()
         try:
-            run = await agent.run(prompt)
+            run = await agent.run(
+                prompt,
+                model_settings=self.config.model_settings(),
+                usage_limits=self.config.usage_limits(),
+            )
         except Exception as exc:
             if run_logger is not None:
                 run_logger.log.warning("synthesis_failed", error=str(exc), exc_info=exc)
