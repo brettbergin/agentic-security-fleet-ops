@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from enum import StrEnum
 from pathlib import Path
@@ -17,7 +18,7 @@ from asfops.api import Fleet
 from asfops.cli.render import ProgressReporter, metadata_table, roster_table
 from asfops.config import FleetConfig
 from asfops.exceptions import AsfopsError, RoleNotFoundError
-from asfops.logs import LoggingConfig, configure_logging
+from asfops.logs import LoggingConfig, configure_logging, ensure_app_home
 from asfops.results import AgentResult, FleetResult, build_agent_report_md
 
 app = typer.Typer(
@@ -29,6 +30,14 @@ app = typer.Typer(
 
 _stdout = Console()
 _stderr = Console(stderr=True)
+
+
+@app.callback()
+def _startup() -> None:
+    """Runs before any command: ensure the ~/.asfops home directory exists."""
+    # Skip under pytest so the test suite never touches the real home directory.
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        ensure_app_home()
 
 
 class OutputFormat(StrEnum):
@@ -169,8 +178,9 @@ def assess(
     configure_logging(cfg.logging)
     fleet = Fleet(cfg)
 
-    show_progress = not quiet and output_format is OutputFormat.md and output is None
-    reporter = ProgressReporter(_stderr) if show_progress else None
+    # Progress goes to stderr (line-based, never touches the stdout report or the
+    # -o file), so show it for every format/output unless explicitly quieted.
+    reporter = ProgressReporter(_stderr) if not quiet else None
 
     try:
         result = asyncio.run(_assess_and_close(fleet, text, reporter))

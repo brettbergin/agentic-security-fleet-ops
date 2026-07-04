@@ -46,7 +46,13 @@ from asfops.fleet.schemas import (
     SynthesisSummary,
     TriageDecision,
 )
-from asfops.logs import LoggingConfig, configure_logging, get_logger
+from asfops.logs import (
+    LoggingConfig,
+    app_home,
+    configure_logging,
+    ensure_app_home,
+    get_logger,
+)
 from asfops.models import CopilotBridge, CopilotModel, ModelRef, resolve_model, shutdown
 from asfops.results import (
     AgentResult,
@@ -85,10 +91,12 @@ __all__ = [
     "TriageDecision",
     "TriageError",
     "__version__",
+    "app_home",
     "assess",
     "assess_sync",
     "compose_report",
     "configure_logging",
+    "ensure_app_home",
     "get_logger",
     "list_roles",
     "resolve_model",

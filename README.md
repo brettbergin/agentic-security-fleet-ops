@@ -77,10 +77,12 @@ Every `FleetResult` optionally includes (`include_metadata=True`, default):
 
 ## Logging
 
-Two separate logs are written per run, under one timestamped directory:
+Two separate logs are written per run, under one timestamped directory in
+`~/.asfops/logs/` (created on first use; override the base with `--log-dir` or
+the `ASFOPS_HOME` env var):
 
 ```
-asfops-logs/<UTC-timestamp>-<run_id>/
+~/.asfops/logs/<UTC-timestamp>-<run_id>/
 ├── app.log                 # global application log (structlog JSON lines)
 └── agents/
     ├── triage.json         # each agent's ENTIRE context…
