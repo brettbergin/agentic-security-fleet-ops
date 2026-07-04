@@ -1,0 +1,91 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "asfops"
+description = "Agentic Security Fleet Ops — an LLM-agent security department with a Security Orchestrator, built on pydantic-ai with a GitHub Copilot SDK provider."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Brett Bergin", email = "brettberginbc@yahoo.com" }]
+requires-python = ">=3.13"
+dynamic = ["version"]
+keywords = ["security", "agents", "llm", "pydantic-ai", "copilot", "orchestration"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.10",
+    "pydantic-ai>=1.0",
+    "github-copilot-sdk>=1.0.2,<2",
+    "typer>=0.15",
+    "rich>=13.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/brettbergin/agentic-security-fleet-ops"
+Repository = "https://github.com/brettbergin/agentic-security-fleet-ops"
+Issues = "https://github.com/brettbergin/agentic-security-fleet-ops/issues"
+
+[project.scripts]
+asfops = "asfops.cli.app:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "pytest-cov>=6.0",
+    "mypy>=1.14",
+    "ruff>=0.9",
+]
+
+[tool.hatch.version]
+path = "src/asfops/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/asfops"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = "copilot.*"
+ignore_missing_imports = true
+follow_untyped_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-m 'not copilot'"
+markers = [
+    "copilot: live tests requiring GitHub Copilot auth (deselected by default)",
+]
+
+[tool.coverage.run]
+source = ["asfops"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+]
