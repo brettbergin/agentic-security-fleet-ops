@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -48,8 +48,17 @@ dev = [
     "ruff>=0.9",
 ]
 
+# Version is derived from git tags by hatch-vcs — never hand-edited. Every merge
+# to main auto-bumps the patch tag (see .github/workflows/release.yml). The
+# `no-local-version` scheme keeps versions PEP 440-clean so PyPI accepts them.
 [tool.hatch.version]
-path = "src/asfops/_version.py"
+source = "vcs"
+raw-options = { local_scheme = "no-local-version", fallback_version = "0.0.0" }
+
+# Write the resolved version into the package so `asfops.__version__` and
+# `asfops version` report it at runtime.
+[tool.hatch.build.hooks.vcs]
+version-file = "src/asfops/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/asfops"]
@@ -57,6 +66,7 @@ packages = ["src/asfops"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+extend-exclude = ["src/asfops/_version.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
@@ -65,6 +75,7 @@ select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
 python_version = "3.13"
 strict = true
 warn_unreachable = true
+exclude = ["_version\\.py$"]
 
 [[tool.mypy.overrides]]
 module = "copilot.*"

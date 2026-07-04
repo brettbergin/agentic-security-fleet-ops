@@ -33,24 +33,12 @@ GitHub Copilot subscription — the Copilot SDK is faked and pydantic-ai's
 - `api.py` — the public `Fleet` and module-level helpers.
 - `cli/` — the typer + rich command-line interface.
 
-## Releasing to PyPI (trusted publishing)
+## Releasing to PyPI
 
-Publishing is automated via GitHub Actions using PyPI
-[trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC — no API
-tokens stored).
-
-**One-time setup (maintainer):**
-
-1. On <https://pypi.org>, add a **pending publisher** for the project `asfops`:
-   - Owner: `brettbergin`
-   - Repository: `agentic-security-fleet-ops`
-   - Workflow: `release.yml`
-   - Environment: `pypi`
-2. In the GitHub repo settings, create an **Environment** named `pypi`
-   (optionally add required reviewers as a release gate).
-
-**Each release:**
-
-1. Bump the version in `src/asfops/_version.py`.
-2. Commit, then tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. The `Release` workflow builds the sdist/wheel and publishes to PyPI.
+Releases are **fully automated** — see [RELEASING.md](RELEASING.md). In short:
+every merge to `main` runs the test gate, auto-bumps the **patch** version by
+creating a new `vX.Y.Z` tag, and publishes to PyPI via trusted publishing.
+[`hatch-vcs`](https://github.com/ofek/hatch-vcs) derives the package version from
+the tag, so `src/asfops/_version.py` is **generated at build time** and never
+hand-edited. To move the minor/major, push that tag once yourself; the next
+merge continues from there.

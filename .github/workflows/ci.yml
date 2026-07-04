@@ -1,9 +1,11 @@
 name: CI
 
+# main is covered by release.yml's own test gate, so it's excluded here to
+# avoid duplicate runs on every merge.
 on:
-  push:
-    branches: [main]
   pull_request:
+  push:
+    branches-ignore: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
