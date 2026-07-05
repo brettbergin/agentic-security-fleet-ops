@@ -36,7 +36,10 @@ class FleetConfig:
     model_overrides: dict[str, ModelRef] = field(default_factory=dict)
     """Per-role-slug model overrides."""
 
-    max_concurrency: int = 5
+    max_concurrency: int = 8
+    """Max specialists run at once. 8 covers a typical 3-7 role selection in a
+    single wave (no late-starting "tail" agent); raise toward the roster size for
+    broad requests, or lower it if the Copilot runtime / rate limits push back."""
     per_agent_timeout_s: float = 300.0
 
     force_roles: tuple[str, ...] = ()

@@ -99,6 +99,28 @@ async def test_concurrency_is_bounded() -> None:
     assert tracker.peak >= 1
 
 
+def test_describe_error() -> None:
+    from asfops.orchestrator import _describe_error
+
+    assert _describe_error(TimeoutError(), 300.0) == "timed out after 300s"
+    assert _describe_error(RuntimeError("boom"), 300.0) == "boom"
+    # message-less exception falls back to its type name, never blank
+    assert _describe_error(RuntimeError(), 300.0) == "RuntimeError"
+
+
+async def test_message_less_failure_has_descriptive_error() -> None:
+    from pydantic_ai.messages import ModelMessage, ModelResponse
+    from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+    def timeout(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        raise TimeoutError  # empty message, like asyncio.timeout()
+
+    orch = Orchestrator(config(model_overrides={"appsec": FunctionModel(timeout)}))
+    results = await orch.fan_out(triage_decision("appsec"), "review")
+    assert results[0].report is None
+    assert results[0].error == "TimeoutError: timed out after 300s"
+
+
 async def test_full_run_produces_report_and_metadata() -> None:
     orch = Orchestrator(
         config(

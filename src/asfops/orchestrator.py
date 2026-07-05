@@ -42,6 +42,15 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _describe_error(exc: BaseException, timeout_s: float) -> str:
+    """Human-readable failure detail — some exceptions (e.g. ``TimeoutError``)
+    carry an empty message, which would otherwise log/report as blank."""
+    if isinstance(exc, TimeoutError):
+        return f"timed out after {timeout_s:.0f}s"
+    message = str(exc).strip()
+    return message or type(exc).__name__
+
+
 _TRIAGE_SYSTEM = """
 You are the Security Orchestrator for a security department. Given an assessment
 request, decide which security specialists should review it. Choose only roles
@@ -243,6 +252,8 @@ class Orchestrator:
             )
         except Exception as exc:
             duration = time.monotonic() - start
+            detail = _describe_error(exc, self.config.per_agent_timeout_s)
+            error = f"{type(exc).__name__}: {detail}"
             if run_logger is not None:
                 run_logger.agent_log(
                     slug=sel.slug,
@@ -250,22 +261,22 @@ class Orchestrator:
                     model_id=model_id,
                     duration_s=duration,
                     started_at=started_at,
-                    error=f"{type(exc).__name__}: {exc}",
+                    error=error,
                 )
                 run_logger.log.warning(
                     "agent_failed",
                     slug=sel.slug,
                     model_id=model_id,
-                    error=str(exc),
+                    error=detail,
                     exc_info=exc,
                 )
             if on_event:
-                on_event(FleetEvent(kind="agent_failed", slug=sel.slug, detail=str(exc)))
+                on_event(FleetEvent(kind="agent_failed", slug=sel.slug, detail=detail))
             return AgentResult(
                 role_slug=sel.slug,
                 role_name=role.name,
                 model_id=model_id,
-                error=f"{type(exc).__name__}: {exc}",
+                error=error,
                 duration_s=duration,
                 usage=AgentUsage(slug=sel.slug, model_id=model_id, duration_s=duration),
             )
