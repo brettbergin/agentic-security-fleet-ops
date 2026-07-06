@@ -49,10 +49,30 @@ def build_command(*, port: int = 8501, headless: bool = False) -> list[str]:
     return cmd
 
 
+def _credentials_path() -> Path:
+    return Path.home() / ".streamlit" / "credentials.toml"
+
+
+def suppress_first_run_prompt(path: Path | None = None) -> None:
+    """Skip Streamlit's first-run email prompt so ``asfops dashboard`` never hangs.
+
+    On first launch Streamlit blocks on an interactive "enter your email" prompt;
+    with no TTY that stalls the server. We write the same empty-email credentials
+    file Streamlit itself writes after the prompt — but only when the user has
+    none, so an existing Streamlit setup is never touched.
+    """
+    creds = path or _credentials_path()
+    if creds.exists():
+        return
+    creds.parent.mkdir(parents=True, exist_ok=True)
+    creds.write_text('[general]\nemail = ""\n', encoding="utf-8")
+
+
 def launch(*, port: int = 8501, headless: bool = False) -> int:
     """Run the Streamlit dashboard; blocks until the server exits."""
     if not streamlit_available():
         raise DashboardNotInstalledError
+    suppress_first_run_prompt()
     return subprocess.call(build_command(port=port, headless=headless))
 
 
@@ -62,4 +82,5 @@ __all__ = [
     "build_command",
     "launch",
     "streamlit_available",
+    "suppress_first_run_prompt",
 ]

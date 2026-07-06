@@ -17,6 +17,7 @@ from asfops.dashboard.launch import (
     DashboardNotInstalledError,
     build_command,
     launch,
+    suppress_first_run_prompt,
 )
 from asfops.fleet.schemas import SynthesisSummary
 from asfops.logs import LoggingConfig
@@ -147,7 +148,7 @@ def test_launch_raises_when_streamlit_missing(monkeypatch: pytest.MonkeyPatch) -
         launch()
 
 
-def test_launch_invokes_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_launch_invokes_subprocess(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     import subprocess
 
     import asfops.dashboard.launch as mod
@@ -158,10 +159,30 @@ def test_launch_invokes_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
         calls.append(cmd)
         return 0
 
+    monkeypatch.setenv("HOME", str(tmp_path))  # isolate the credentials write
     monkeypatch.setattr(mod, "streamlit_available", lambda: True)
     monkeypatch.setattr(subprocess, "call", fake_call)
     assert launch(port=1234) == 0
     assert calls and "1234" in calls[0]
+    # launch suppressed the first-run prompt on the way
+    assert (tmp_path / ".streamlit" / "credentials.toml").exists()
+
+
+def test_suppress_first_run_prompt_creates(tmp_path: Path) -> None:
+    creds = tmp_path / ".streamlit" / "credentials.toml"
+    assert not creds.exists()
+    suppress_first_run_prompt(creds)
+    assert creds.exists()
+    assert 'email = ""' in creds.read_text()
+
+
+def test_suppress_first_run_prompt_preserves_existing(tmp_path: Path) -> None:
+    creds = tmp_path / ".streamlit" / "credentials.toml"
+    creds.parent.mkdir(parents=True)
+    creds.write_text('[general]\nemail = "me@example.com"\n')
+    suppress_first_run_prompt(creds)
+    # an existing Streamlit setup is never clobbered
+    assert "me@example.com" in creds.read_text()
 
 
 # --- optional Streamlit smoke (skips in CI where streamlit isn't installed) ---
