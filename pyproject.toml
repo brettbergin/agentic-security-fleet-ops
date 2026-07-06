@@ -91,6 +91,13 @@ module = "copilot.*"
 ignore_missing_imports = true
 follow_untyped_imports = true
 
+# The `dashboard` extra (streamlit/pandas) isn't installed in the lint/test CI
+# job, and neither ships stubs — treat them as untyped so the dashboard tests
+# type-check with or without the extra present.
+[[tool.mypy.overrides]]
+module = ["streamlit.*", "pandas.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
