@@ -31,6 +31,12 @@ dependencies = [
     "structlog>=24.1",
 ]
 
+[project.optional-dependencies]
+dashboard = [
+    "streamlit>=1.40",
+    "pandas>=2.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/brettbergin/agentic-security-fleet-ops"
 Repository = "https://github.com/brettbergin/agentic-security-fleet-ops"
@@ -75,7 +81,10 @@ select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
 python_version = "3.13"
 strict = true
 warn_unreachable = true
-exclude = ["_version\\.py$"]
+# Exclude the generated version file and the Streamlit view (streamlit/pandas
+# ship no stubs and aren't installed in CI; the dashboard's tested logic lives
+# in data.py / launch.py).
+exclude = ["_version\\.py$", "dashboard/app\\.py$"]
 
 [[tool.mypy.overrides]]
 module = "copilot.*"
@@ -92,6 +101,11 @@ markers = [
 
 [tool.coverage.run]
 source = ["asfops"]
+omit = [
+    # Streamlit view layer: rendering code exercised only via the live app,
+    # not unit-testable. The parsing/launch logic in dashboard/ is covered.
+    "*/asfops/dashboard/app.py",
+]
 
 [tool.coverage.report]
 fail_under = 85

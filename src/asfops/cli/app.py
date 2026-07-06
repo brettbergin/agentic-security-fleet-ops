@@ -12,6 +12,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 
 from asfops._version import __version__
 from asfops.api import Fleet
@@ -63,7 +64,9 @@ def _read_request(request: str | None, file: Path | None) -> str:
 
 
 def _fail(message: str, code: int = 1) -> None:
-    _stderr.print(f"[red]error:[/red] {message}")
+    # escape() so bracketed content (paths, "asfops[dashboard]") isn't eaten as
+    # rich markup.
+    _stderr.print(f"[red]error:[/red] {escape(message)}")
     raise typer.Exit(code)
 
 
@@ -307,6 +310,22 @@ def models() -> None:
     _stdout.print("[green]Copilot runtime OK.[/green] Available models:")
     for mid in ids:
         _stdout.print(f"  • copilot:{mid}")
+
+
+@app.command()
+def dashboard(
+    port: Annotated[int, typer.Option("--port", "-p", help="Port to serve on.")] = 8501,
+    headless: Annotated[
+        bool, typer.Option("--headless", help="Don't auto-open a browser.")
+    ] = False,
+) -> None:
+    """Launch the Streamlit dashboard over the ~/.asfops/logs run history."""
+    from asfops.dashboard.launch import DashboardNotInstalledError, launch
+
+    try:
+        raise typer.Exit(launch(port=port, headless=headless))
+    except DashboardNotInstalledError as exc:
+        _fail(str(exc), code=2)
 
 
 @app.command()
