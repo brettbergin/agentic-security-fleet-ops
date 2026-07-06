@@ -238,3 +238,12 @@ def test_run_role_writes_logs(offline_forcelogs: None, tmp_path: Any) -> None:
     run_dirs = list(log_dir.iterdir())
     assert len(run_dirs) == 1
     assert (run_dirs[0] / "agents" / "threat-model.json").exists()
+
+
+def test_dashboard_missing_streamlit(monkeypatch: pytest.MonkeyPatch) -> None:
+    import asfops.dashboard.launch as launch_mod
+
+    monkeypatch.setattr(launch_mod, "streamlit_available", lambda: False)
+    result = runner.invoke(app, ["dashboard"])
+    assert result.exit_code == 2
+    assert "asfops[dashboard]" in result.stderr

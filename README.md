@@ -57,7 +57,19 @@ asfops assess "We're adding a webhook receiver that executes user-supplied templ
 asfops roster                       # meet the department
 asfops run threat-model "..."       # engage a single specialist
 asfops models                       # check Copilot availability / list models
+asfops dashboard                    # launch the Streamlit dashboard (needs the extra)
 ```
+
+## Dashboard
+
+A Streamlit dashboard over your run history (`~/.asfops/logs`): browse past assessments, a findings explorer (filter by severity/role), per-run severity + token charts, the roster, and a form to launch a new assessment. Install the optional extra and launch it:
+
+```bash
+pip install "asfops[dashboard]"
+asfops dashboard            # opens http://localhost:8501
+```
+
+It reads the same structured logs the fleet already writes, so every `assess` run shows up automatically.
 
 ## The fleet
 
